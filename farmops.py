@@ -21,6 +21,9 @@ RELAY_HEATER = 22
 #ultrasonic
 GPIO_TRIGGER = 20
 GPIO_ECHO = 21
+#water sensor
+GPIO_WTR = 26
+GPIO_SOLENOID = 27
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
@@ -28,14 +31,14 @@ GPIO.setup(RELAY_FAN, GPIO.OUT)
 GPIO.setup(RELAY_HEATER, GPIO.OUT)
 GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
 GPIO.setup(GPIO_ECHO, GPIO.IN)
+GPIO.setup(GPIO_WTR, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(GPIO_SOLENOID, GPIO.OUT)
 
 def build_payload(variable_1, variable_2,variable_3):
     #DHT
     sensor = Adafruit_DHT.DHT11
     kelembapan, temperatur = Adafruit_DHT.read_retry(sensor, DHT)
     
-    value_1 = temperatur
-    value_2 = kelembapan
     value_tempHi = tempHi.get_values(1)
     value_tempLo = tempLo.get_values(1)
     
@@ -43,13 +46,13 @@ def build_payload(variable_1, variable_2,variable_3):
     dataTempLo = value_tempLo[0].get("value")
 
     
-    if value_1 <= dataTempLo :
-        GPIO.output(22, GPIO.HIGH)
-    elif value_1 >= dataTempHi :
-        GPIO.output(17, GPIO.HIGH)
-    else:
-        GPIO.output(17, GPIO.LOW)
+    if temperatur != None and temperatur <= dataTempLo :
         GPIO.output(22, GPIO.LOW)
+    elif temperatur != None and temperatur >= dataTempHi :
+        GPIO.output(17, GPIO.LOW)
+    else:
+        GPIO.output(17, GPIO.HIGH)
+        GPIO.output(22, GPIO.HIGH)
     
     #Ultrasonic
     GPIO.output(GPIO_TRIGGER, True)
@@ -69,12 +72,13 @@ def build_payload(variable_1, variable_2,variable_3):
  
     # time difference between start and arrival
     TimeElapsed = StopTime - StartTime
-    distance = (100 - (((TimeElapsed * 34300) / 2 - 1) / 20 * 100))
+    tankPakan = (100 - (((TimeElapsed * 34300) / 2 - 2) / 20 * 100))
+    
     
     payload = {
-        variable_1: value_1,
-        variable_2: value_2,
-        variable_3: distance
+        variable_1: temperatur,
+        variable_2: kelembapan,
+        variable_3: tankPakan
     }
     return payload
 
@@ -110,9 +114,27 @@ def main():
     print("[INFO] Attemping to send data")
     post_request(payload)
     print("[INFO] finished")
+    
+def waterSensor():
+        #Water Sensor
+    if GPIO.input(26) == 0 :
+        GPIO.output(27, GPIO.LOW)
+        print("Pengisi minum menyala")
+        time.sleep(5)
+        GPIO.output(27, GPIO.HIGH)
+        time.sleep(0.5)
+    else :
+        GPIO.output(27, GPIO.HIGH)
+        print("Pengisi minum mati")
+        time.sleep(2)
 
 
 if __name__ == '__main__':
-    while (True):
-        main()
-        time.sleep(1)
+    try :
+       while (True):
+           waterSensor()
+           main()
+           time.sleep(1)
+           
+    except KeyboardInterrupt:
+        GPIO.cleanup()
