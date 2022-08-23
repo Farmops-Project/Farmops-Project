@@ -9,7 +9,8 @@ from multiprocessing import Process
 
 client = pymongo.MongoClient("mongodb://altissimo:altissimo@ac-1k1ioje-shard-00-00.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-01.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-02.tktjcey.mongodb.net:27017/?ssl=true&replicaSet=atlas-wn5rne-shard-0&authSource=admin&retryWrites=true&w=majority")
 db = client['Farmops']
-my_collections = db["Data input"]
+inputPakan = db["input pakan"]
+inputSuhu = db["input temperatur"]
 
 TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"  # Put your TOKEN here
 DEVICE_LABEL = "farmops"  # Put your device label here 
@@ -45,31 +46,15 @@ GPIO.setup(GPIO_WTR, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(GPIO_SOLENOID, GPIO.OUT)
 GPIO.setup(GPIO_SERVO, GPIO.OUT)
 
+dht = Adafruit_DHT.DHT11
+kelembapan, temperatur = Adafruit_DHT.read_retry(dht, DHT)
+
 servo = GPIO.PWM(GPIO_SERVO, 50)
 servo.start(0)
 duty = 0
-dataMongo = my_collections.find().sort([('_id', -1)]).limit(1)
 
 
 def build_payload(variable_1, variable_2,variable_3):
-    #DHT
-    sensor = Adafruit_DHT.DHT11
-    kelembapan, temperatur = Adafruit_DHT.read_retry(sensor, DHT)
-    
-    value_tempHi = tempHi.get_values(1)
-    value_tempLo = tempLo.get_values(1)
-    
-    dataTempHi = value_tempHi[0].get("value")
-    dataTempLo = value_tempLo[0].get("value")
-
-    
-    if temperatur != None and temperatur <= dataTempLo :
-        GPIO.output(22, GPIO.LOW)
-    elif temperatur != None and temperatur >= dataTempHi :
-        GPIO.output(17, GPIO.LOW)
-    else:
-        GPIO.output(17, GPIO.HIGH)
-        GPIO.output(22, GPIO.HIGH)
     
     #Ultrasonic
     GPIO.output(GPIO_TRIGGER, True)
@@ -130,8 +115,18 @@ def main():
     print("[INFO] Attemping to send data")
     post_request(payload)
     print("[INFO] finished")
+    
+def tempControl(tempHi, tempLo):
+    if temperatur != None and temperatur <= tempLo :
+        GPIO.output(RELAY_HEATER, GPIO.LOW)
+    elif temperatur != None and temperatur >= tempHi :
+        GPIO.output(RELAY_FAN, GPIO.LOW)
+    else:
+        GPIO.output(RELAY_FAN, GPIO.HIGH)
+        GPIO.output(RELAY_HEATER, GPIO.HIGH)
+    time.sleep(1)
 
-def waterSensor(cek):
+def waterSensor():
         #Water Sensor
     if GPIO.input(26) == 0 :
         GPIO.output(27, GPIO.LOW)
@@ -153,7 +148,6 @@ def servoPakan() :
     time.sleep(0.5)
     servo.ChangeDutyCycle(0)
     print("Pakan diberikan")
-    time.sleep(1)
         
 def runInParallel(*fns):
   proc = []
@@ -167,12 +161,17 @@ def runInParallel(*fns):
 
 if __name__ == '__main__':
     try :
-        while (True):  
-            dataMongo = my_collections.find().sort([('_id', -1)]).limit(1)
-            for x in dataMongo:
+        while (True):
+            dataPakan = inputPakan.find().sort([('_id', -1)]).limit(1)
+            dataSuhu = inputSuhu.find().sort([('_id', -1)]).limit(1)
+            for x in dataPakan :
                 jamPakan = x["jamPakan"]
+            for y in dataSuhu :
+                tempHi = int(y["tempHi"])
+                tempLo = int(y["tempLo"])
+            
             schedule.every().day.at(jamPakan).do(servoPakan)
-            runInParallel(main, waterSensor(5),  schedule.run_pending())
+            runInParallel(main, tempControl(tempHi, tempLo), waterSensor(),  schedule.run_pending())
             time.sleep(1)
            
     except KeyboardInterrupt:
