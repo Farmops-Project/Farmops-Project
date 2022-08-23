@@ -1,8 +1,15 @@
 import Adafruit_DHT
+import pymongo
 import time
 import requests
-from ubidots import ApiClient
 import RPi.GPIO as GPIO
+import schedule
+from ubidots import ApiClient
+from multiprocessing import Process
+
+client = pymongo.MongoClient("mongodb://altissimo:altissimo@ac-1k1ioje-shard-00-00.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-01.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-02.tktjcey.mongodb.net:27017/?ssl=true&replicaSet=atlas-wn5rne-shard-0&authSource=admin&retryWrites=true&w=majority")
+db = client['Farmops']
+my_collections = db["Data input"]
 
 TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"  # Put your TOKEN here
 DEVICE_LABEL = "farmops"  # Put your device label here 
@@ -13,6 +20,7 @@ VARIABLE_LABEL_3 = "tank-pakan"
 api = ApiClient(token="BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv")
 tempHi = api.get_variable("62ffaf3d57021d11c524c9a5")
 tempLo = api.get_variable("62ffaf97a6ecfc1fe89212fb")
+pakan = api.get_variable("6301f9ff1f9dff32b3c7e828")
 
 #monitoring DHT
 DHT = 4
@@ -24,6 +32,8 @@ GPIO_ECHO = 21
 #water sensor
 GPIO_WTR = 26
 GPIO_SOLENOID = 27
+#servo
+GPIO_SERVO = 16
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
@@ -33,6 +43,13 @@ GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
 GPIO.setup(GPIO_ECHO, GPIO.IN)
 GPIO.setup(GPIO_WTR, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(GPIO_SOLENOID, GPIO.OUT)
+GPIO.setup(GPIO_SERVO, GPIO.OUT)
+
+servo = GPIO.PWM(GPIO_SERVO, 50)
+servo.start(0)
+duty = 0
+dataMongo = my_collections.find().sort([('_id', -1)]).limit(1)
+
 
 def build_payload(variable_1, variable_2,variable_3):
     #DHT
@@ -74,7 +91,6 @@ def build_payload(variable_1, variable_2,variable_3):
     TimeElapsed = StopTime - StartTime
     tankPakan = (100 - (((TimeElapsed * 34300) / 2 - 2) / 20 * 100))
     
-    
     payload = {
         variable_1: temperatur,
         variable_2: kelembapan,
@@ -114,8 +130,8 @@ def main():
     print("[INFO] Attemping to send data")
     post_request(payload)
     print("[INFO] finished")
-    
-def waterSensor():
+
+def waterSensor(cek):
         #Water Sensor
     if GPIO.input(26) == 0 :
         GPIO.output(27, GPIO.LOW)
@@ -127,14 +143,37 @@ def waterSensor():
         GPIO.output(27, GPIO.HIGH)
         print("Pengisi minum mati")
         time.sleep(2)
+        
+def servoPakan() :
+    servo.ChangeDutyCycle(duty)
+
+    servo.ChangeDutyCycle(7)
+    time.sleep(2)
+    servo.ChangeDutyCycle(2)
+    time.sleep(0.5)
+    servo.ChangeDutyCycle(0)
+    print("Pakan diberikan")
+    time.sleep(1)
+        
+def runInParallel(*fns):
+  proc = []
+  for fn in fns:
+    p = Process(target=fn)
+    p.start()
+    proc.append(p)
+  for p in proc:
+    p.join()
 
 
 if __name__ == '__main__':
     try :
-       while (True):
-           waterSensor()
-           main()
-           time.sleep(1)
+        while (True):  
+            dataMongo = my_collections.find().sort([('_id', -1)]).limit(1)
+            for x in dataMongo:
+                jamPakan = x["jamPakan"]
+            schedule.every().day.at(jamPakan).do(servoPakan)
+            runInParallel(main, waterSensor(5),  schedule.run_pending())
+            time.sleep(1)
            
     except KeyboardInterrupt:
         GPIO.cleanup()
