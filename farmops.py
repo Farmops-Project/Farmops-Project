@@ -40,7 +40,7 @@ GPIO_SERVO = 16
 #tank minum
 GPIO_100 = 6
 GPIO_50 = 13
-GPIO_0 = 19
+GPIO_25 = 19
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
@@ -53,19 +53,17 @@ GPIO.setup(GPIO_SOLENOID, GPIO.OUT)
 GPIO.setup(GPIO_SERVO, GPIO.OUT)
 GPIO.setup(GPIO_100, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(GPIO_50, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(GPIO_0, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(GPIO_25, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 
 dht = Adafruit_DHT.DHT11
-kelembapan, temperatur = Adafruit_DHT.read_retry(dht, DHT)
 
 servo = GPIO.PWM(GPIO_SERVO, 50)
 servo.start(0)
-duty = 0
 
 tankMinum = 0
 
 def build_payload(variable_1, variable_2, variable_3, variable_4):
-    
+    kelembapan, temperatur = Adafruit_DHT.read_retry(dht, DHT)
     #tank pakan
     GPIO.output(GPIO_TRIGGER, True)
     time.sleep(0.00001)
@@ -81,21 +79,20 @@ def build_payload(variable_1, variable_2, variable_3, variable_4):
         StopTime = time.time()
  
     TimeElapsed = StopTime - StartTime
-    tankPakan = (100 - (((TimeElapsed * 34300) / 2 - 2) / 20 * 100))
+    tankPakan = (100 - ((((TimeElapsed * 34300) / 2) - 3 ) / 10.600 * 100))
     
     #tank minum
-    if GPIO.input(GPIO_0) == 1 and GPIO.input(GPIO_50) == 0 and GPIO.input(GPIO_100) == 0 :
-        tankMinum = 0
+    if GPIO.input(GPIO_25) == 1 and GPIO.input(GPIO_50) == 0 and GPIO.input(GPIO_100) == 0 :
+        tankMinum = 25
         print(tankMinum)
-    elif GPIO.input(GPIO_0) == 1 and GPIO.input(GPIO_50) == 1 and GPIO.input(GPIO_100) == 0 :
+    elif GPIO.input(GPIO_25) == 1 and GPIO.input(GPIO_50) == 1 and GPIO.input(GPIO_100) == 0 :
         tankMinum = 50
         print(tankMinum)
-    elif GPIO.input(GPIO_0) == 1 and GPIO.input(GPIO_50) == 1 and GPIO.input(GPIO_100) == 1 :
+    elif GPIO.input(GPIO_25) == 1 and GPIO.input(GPIO_50) == 1 and GPIO.input(GPIO_100) == 1 :
         tankMinum = 100
         print(tankMinum)
     else :
         tankMinum = 0
-        print("tanki minum tidak terdeteksi")
     
     payload = {
         variable_1: temperatur,
@@ -139,6 +136,7 @@ def main():
     print("[INFO] finished")
     
 def tempControl(tempHi, tempLo):
+    kelembapan, temperatur = Adafruit_DHT.read_retry(dht, DHT)
     if temperatur != None and temperatur <= tempLo :
         GPIO.output(RELAY_HEATER, GPIO.LOW)
     elif temperatur != None and temperatur >= tempHi :
@@ -153,25 +151,25 @@ def waterSensor():
     if GPIO.input(GPIO_WTR) == 0 :
         GPIO.output(GPIO_SOLENOID, GPIO.LOW)
         print("Pengisi minum menyala")
-        time.sleep(5)
+        time.sleep(10)
         GPIO.output(GPIO_SOLENOID, GPIO.HIGH)
         print("Pengisi minum mati")
         time.sleep(0.5)
     else :
         GPIO.output(GPIO_SOLENOID, GPIO.HIGH)
-        print("Pengisi minum mati")
-        time.sleep(2)
         
-def servoPakan() :
+def setAngle(angle) :
+    duty = angle / 18 + 2
+    GPIO.output(16, True)
     servo.ChangeDutyCycle(duty)
-
-    servo.ChangeDutyCycle(7)
-    time.sleep(2)
-    servo.ChangeDutyCycle(2)
-    time.sleep(0.5)
+    time.sleep(1)
+    GPIO.output(16, False)
     servo.ChangeDutyCycle(0)
-    print("Pakan diberikan")
-    time.sleep(60)
+ 
+def servoPakan():
+    setAngle(0)
+    setAngle(180)
+    time.sleep(5)
     
 def jadwalPakan():
     for dataPakan in inputPakan.find().sort([('_id', -1)]).limit(1) :
@@ -188,9 +186,11 @@ def tele():
         VARIABLE_LABEL_1, VARIABLE_LABEL_2, VARIABLE_LABEL_3, VARIABLE_LABEL_4)
     for x in payload :
         y = int(x["tank-pakan"])
-    
-    if y <= 0 :
-        bot.sendMessage(id, "pakan ayam habis, tolong kirim hari ini ya")
+    if y <= 5 :
+        sendTele = 1
+    else :
+        sendTele = 0
+    return sendTele
         
 def runInParallel(*fns):
   proc = []
@@ -204,13 +204,19 @@ def runInParallel(*fns):
 
 if __name__ == '__main__':
     try :
-        while (True):
+        msg = 0
+        while msg == 0 and msg < 1 :
+            if tele() == 1 :
+                bot.sendMessage(id, "pakan ayam habis, tolong kirim hari ini ya")
+                msg = msg + 1
+            break
+        while True:
             for dataSuhu in inputSuhu.find().sort([('_id', -1)]).limit(1) :
                 tempHi = int(dataSuhu["tempHi"])
                 tempLo = int(dataSuhu["tempLo"])
-            runInParallel(main, tempControl(tempHi, tempLo), waterSensor(), jadwalPakan(), schedule.run_pending())
-            
+            if msg == 1 and tele() == 0:
+                msg = msg - 1
+            runInParallel(main, tempControl(tempHi, tempLo), waterSensor, jadwalPakan, schedule.run_pending())
             time.sleep(1)
-           
     except KeyboardInterrupt:
         GPIO.cleanup()
