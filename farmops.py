@@ -10,7 +10,6 @@ import time
 
 token = "5760699009:AAGBKuDEw-4wrI58djCvJzgZNpn0GrLBQwY"
 id = "-692036680"
-
 bot = telepot.Bot(token)
 
 client = pymongo.MongoClient("mongodb://altissimo:altissimo@ac-1k1ioje-shard-00-00.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-01.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-02.tktjcey.mongodb.net:27017/?ssl=true&replicaSet=atlas-wn5rne-shard-0&authSource=admin&retryWrites=true&w=majority")
@@ -184,9 +183,8 @@ def jadwalPakan():
 def tele():
     payload = build_payload(
         VARIABLE_LABEL_1, VARIABLE_LABEL_2, VARIABLE_LABEL_3, VARIABLE_LABEL_4)
-    for x in payload :
-        y = int(x["tank-pakan"])
-    if y <= 5 :
+    pakan = payload['tank-pakan']
+    if pakan <= 5 :
         sendTele = 1
     else :
         sendTele = 0
@@ -210,6 +208,7 @@ if __name__ == '__main__':
                 bot.sendMessage(id, "pakan ayam habis, tolong kirim hari ini ya")
                 msg = msg + 1
             break
+        
         while True:
             for dataSuhu in inputSuhu.find().sort([('_id', -1)]).limit(1) :
                 tempHi = int(dataSuhu["tempHi"])
@@ -218,5 +217,6 @@ if __name__ == '__main__':
                 msg = msg - 1
             runInParallel(main, tempControl(tempHi, tempLo), waterSensor, jadwalPakan, schedule.run_pending())
             time.sleep(1)
+            
     except KeyboardInterrupt:
         GPIO.cleanup()
