@@ -17,7 +17,7 @@ db = client['Farmops']
 inputPakan = db["input pakan"]
 inputSuhu = db["input temperatur"]
 
-TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"  # Put your TOKEN here
+TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"
 DEVICE_LABEL = "farmops"
 VARIABLE_LABEL_1 = "temperatur"
 VARIABLE_LABEL_2 = "kelembapan"
@@ -146,7 +146,6 @@ def tempControl(tempHi, tempLo):
     time.sleep(1)
 
 def waterSensor():
-        #Water Sensor
     if GPIO.input(GPIO_WTR) == 0 :
         GPIO.output(GPIO_SOLENOID, GPIO.LOW)
         print("Pengisi minum menyala")
