@@ -6,16 +6,17 @@ import RPi.GPIO as GPIO
 import schedule
 from multiprocessing import Process
 import telepot
-import time
 
 token = "5760699009:AAGBKuDEw-4wrI58djCvJzgZNpn0GrLBQwY"
-id = "-692036680"
+supplier = "-692036680"
+owner = "-867528662"
 bot = telepot.Bot(token)
 
 client = pymongo.MongoClient("mongodb://altissimo:altissimo@ac-1k1ioje-shard-00-00.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-01.tktjcey.mongodb.net:27017,ac-1k1ioje-shard-00-02.tktjcey.mongodb.net:27017/?ssl=true&replicaSet=atlas-wn5rne-shard-0&authSource=admin&retryWrites=true&w=majority")
 db = client['Farmops']
 inputPakan = db["input pakan"]
 inputSuhu = db["input temperatur"]
+PLN = db("indikator")
 
 TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"
 DEVICE_LABEL = "farmops"
@@ -23,6 +24,7 @@ VARIABLE_LABEL_1 = "temperatur"
 VARIABLE_LABEL_2 = "kelembapan"
 VARIABLE_LABEL_3 = "tank-pakan"
 VARIABLE_LABEL_4 = "tank-minum"
+VARIABLE_LABEL_5 = "power"
 
 #monitoring DHT
 DHT = 4
@@ -40,6 +42,8 @@ GPIO_SERVO = 16
 GPIO_100 = 6
 GPIO_50 = 13
 GPIO_25 = 19
+#amp sensor
+GPIO_AMP = 18
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
@@ -53,6 +57,7 @@ GPIO.setup(GPIO_SERVO, GPIO.OUT)
 GPIO.setup(GPIO_100, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(GPIO_50, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(GPIO_25, GPIO.IN , pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(GPIO_AMP, GPIO.IN)
 
 dht = Adafruit_DHT.DHT11
 
@@ -61,7 +66,7 @@ servo.start(0)
 
 tankMinum = 0
 
-def build_payload(variable_1, variable_2, variable_3, variable_4):
+def build_payload(variable_1, variable_2, variable_3, variable_4, variable_5):
     kelembapan, temperatur = Adafruit_DHT.read_retry(dht, DHT)
     #tank pakan
     GPIO.output(GPIO_TRIGGER, True)
@@ -97,7 +102,8 @@ def build_payload(variable_1, variable_2, variable_3, variable_4):
         variable_1: temperatur,
         variable_2: kelembapan,
         variable_3: tankPakan,
-        variable_4: tankMinum
+        variable_4: tankMinum,
+        variable_5: GPIO.input(GPIO_AMP)
     }
     return payload
 
@@ -167,6 +173,7 @@ def setAngle(angle) :
 def servoPakan():
     setAngle(0)
     setAngle(180)
+    bot.sendMessage(owner, "Pakan diberikan")
     time.sleep(5)
     
 def jadwalPakan():
@@ -179,16 +186,24 @@ def jadwalPakan():
     schedule.every().day.at(jamPakan2).do(servoPakan)
     schedule.every().day.at(jamPakan3).do(servoPakan)
     
-def tele():
-    payload = build_payload(
-        VARIABLE_LABEL_1, VARIABLE_LABEL_2, VARIABLE_LABEL_3, VARIABLE_LABEL_4)
+def telePakan():
+    payload = build_payload(VARIABLE_LABEL_1, VARIABLE_LABEL_2, VARIABLE_LABEL_3, VARIABLE_LABEL_4, VARIABLE_LABEL_5)
     pakan = payload['tank-pakan']
     if pakan <= 5 :
-        sendTele = 1
+        telePakan = 1
     else :
-        sendTele = 0
-    return sendTele
-        
+        telePakan = 0
+    return telePakan
+
+def telePLN():
+    payload = build_payload(VARIABLE_LABEL_1, VARIABLE_LABEL_2, VARIABLE_LABEL_3, VARIABLE_LABEL_4, VARIABLE_LABEL_5)
+    PLN = payload["power"]
+    if PLN == 0 :
+        telePLN = 1
+    else :
+        telePLN = 0
+    return telePLN
+
 def runInParallel(*fns):
   proc = []
   for fn in fns:
@@ -198,22 +213,36 @@ def runInParallel(*fns):
   for p in proc:
     p.join()
 
-
 if __name__ == '__main__':
     try :
-        msg = 0
-        while msg == 0 and msg < 1 :
-            if tele() == 1 :
-                bot.sendMessage(id, "pakan ayam habis, tolong kirim hari ini ya")
-                msg = msg + 1
+        msgPakan = 0
+        msgPLN = 0
+
+        while msgPakan == 0 and msgPakan < 1 :
+            if telePakan() == 1 :
+                bot.sendMessage(supplier, "Pakan ayam habis, tolong kirim hari ini ya")
+                msgPakan = msgPakan + 1
             break
-        
+
+        while msgPLN == 0 and msgPLN < 1 :
+            if telePLN() == 1 :
+                bot.sendMessage(owner, "Listrik PLN padam, listrik cadangan diaktifkan")
+                msgPLN = msgPLN + 1
+            break
+
         while True:
             for dataSuhu in inputSuhu.find().sort([('_id', -1)]).limit(1) :
                 tempHi = int(dataSuhu["tempHi"])
                 tempLo = int(dataSuhu["tempLo"])
-            if msg == 1 and tele() == 0:
-                msg = msg - 1
+
+            if msgPakan == 1 and telePakan() == 0:
+                msgPakan = msgPakan - 1
+            if msgPLN == 1 and telePLN() == 0:
+                bot.sendMessage(owner, "Listrik PLN menyala")
+                msgPLN = msgPLN - 1
+            
+            PLN.insert_one({"power": GPIO.input(GPIO_AMP)})
+
             runInParallel(main, tempControl(tempHi, tempLo), waterSensor, jadwalPakan, schedule.run_pending())
             time.sleep(1)
             
