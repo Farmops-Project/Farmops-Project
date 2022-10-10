@@ -16,7 +16,7 @@ client = pymongo.MongoClient("mongodb://altissimo:altissimo@ac-1k1ioje-shard-00-
 db = client['Farmops']
 inputPakan = db["input pakan"]
 inputSuhu = db["input temperatur"]
-PLN = db("indikator")
+PLN = db["indikator"]
 
 TOKEN = "BBFF-thUhhRPJojoHiUB78bozuZuPy2dKTv"
 DEVICE_LABEL = "farmops"
